@@ -1,28 +1,21 @@
-# NEON ARCADE — ミニゲームコレクション
+# NEON ARCADE — レイアウト修正版
 
-フォルダーを増やさず、ファイルをすべて同じ階層に置く構成です。GitHub Pagesで公開できます。
+## ファイル
+すべてのファイルは同じ階層に置いてください。フォルダーに分ける必要はありません。
 
-## ゲーム
-- 反射神経テスト：ランダムな合図に反応
-- ネオン回避：左右に動いて障害物を避ける
-- 10秒連打王：10秒間のタップ数を競う
-- 記憶パネル：光った順番を覚える
-- ターゲットハント：ターゲットを15回狙う
+- `index.html` — 画面構成
+- `style.css` — レイアウト修正版（デスクトップは3列、タブレットは2列、スマホは1列）
+- `game.js` — ゲームとFirebase通信
+- `firebase-config.js` — Firebaseプロジェクト設定
+- `database.rules.json` — ルール設定の参考
 
-## GitHub Pagesへの設置
+## GitHubへの反映
 1. ZIPを展開します。
-2. `index.html`、`style.css`、`game.js`、`firebase-config.js`、`database.rules.json`、`README.md` をGitHubリポジトリのルートへアップロードします。
-3. Settings → Pages で `main` ブランチと `/(root)` を選択します。
+2. 上記ファイルをリポジトリのルートにアップロードし、同名ファイルを置き換えます。
+3. Commit changes で保存します。
+4. GitHub Pagesを開き、`Ctrl + F5` で強制再読み込みします。
 
-## Firebase
-`firebase-config.js` は指定された `game-pases2` の設定を使用しています。
-Firebase Consoleで以下を有効にしてください。
-- Authentication → Sign-in method → Anonymous
-- Realtime Databaseを作成し、`databaseURL` が `https://game-pases2-default-rtdb.firebaseio.com/` と一致することを確認
-- `database.rules.json` のルールをRealtime DatabaseのRulesタブに設定してPublish
-
-## オンラインルーム
-オンラインルームは6人まで。部屋コードを共有すると同じルームに参加でき、各自のミニゲームのスコアがランキングに反映されます。ゲームそのものは各端末で進行し、スコアのみ共有します。
+`index.html` のCSS参照にはキャッシュ回避用のバージョン番号を付けています。
 
 ## 注意
-これは遊び用の試作です。公開環境でのスコアやルームデータは不正操作を完全には防げません。公開ランキングなど本格運用をする場合は、Firebase Security Rulesをより厳密にし、スコア計算を信頼できるサーバー側に移してください。
+Firebaseのルールはゲームのデータ保護に関わります。`database.rules.json` はそのまま公開用の安全性を保証するものではありません。公開前に、参加者が他人のスコアやゲーム状態を不正に変更できないようルールを確認してください。
