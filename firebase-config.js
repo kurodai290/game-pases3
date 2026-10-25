@@ -3,7 +3,7 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyCdrTIwV6f7dPfoAOnruOZ_4VU4OrfWpDw",
   authDomain: "game-pases2.firebaseapp.com",
-  databaseURL: "https://console.firebase.google.com/u/0/project/game-pases2/database/game-pases2-default-rtdb/data/~2F?hl=ja",
+  databaseURL: "https://game-pases2-default-rtdb.firebaseio.com/",
   projectId: "game-pases2",
   storageBucket: "game-pases2.firebasestorage.app",
   messagingSenderId: "696288653181",
