@@ -1,267 +1,51 @@
 import { firebaseConfig } from './firebase-config.js';
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js';
-import { getDatabase, ref, get, set, update, remove, onValue, onDisconnect, runTransaction, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-database.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getDatabase, ref, get, set, update, remove, onValue, onDisconnect, runTransaction, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const $ = id => document.getElementById(id);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-let db, uid = null, roomCode = null, roomData = null, unsubRoom = null;
-let isHost = false, phase = 'lobby', keys = new Set(), moveTouch = new Set();
-let me = { x: 480, y: 270, hp: 100, kills: 0, alive: true, name: 'Player' };
-let enemies = [], bullets = [], lastWrite = 0, lastHostTick = 0, enemyCounter = 0;
-const canvas = $('arena'), ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
-
-function message(text, error=false) { $('lobbyMessage').textContent = text; $('lobbyMessage').style.color = error ? '#ff719e' : ''; }
-function roomMessage(text) { $('roomMessage').textContent = text; }
-function setConnected(ok, text) { $('connectionDot').classList.toggle('online', ok); $('connectionText').textContent = text; }
-function roomPath(path='') { return `rooms/${roomCode}${path ? '/' + path : ''}`; }
-function safeName() { return ($('playerName').value.trim() || 'Player').slice(0,16); }
-function code6() { const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let out=''; for(let i=0;i<6;i++) out += chars[Math.floor(Math.random()*chars.length)]; return out; }
-function show(id) { $(id).classList.remove('hidden'); }
-function hide(id) { $(id).classList.add('hidden'); }
-
-async function init() {
-  if (!firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes('PASTE_')) {
-    setConnected(false, '設定が必要');
-    message('firebase-config.js にRealtime DatabaseのURLを設定してください。', true);
-    return;
-  }
-  try {
-    db = getDatabase(app);
-    const result = await signInAnonymously(auth);
-    uid = result.user.uid;
-    setConnected(true, 'Firebase接続済み');
-    message('接続しました。部屋を作成するか、コードで参加してください。');
-  } catch (e) {
-    console.error(e); setConnected(false, '接続エラー');
-    message('接続に失敗しました。匿名認証・Realtime Database・ルールを確認してください。', true);
-  }
-}
-
-async function createRoom() {
-  if (!db || !uid) return message('先にFirebaseの設定を確認してください。', true);
-  $('createBtn').disabled = true;
-  try {
-    let created = false;
-    for(let i=0;i<8;i++) {
-      const code = code6();
-      const result = await runTransaction(ref(db, `rooms/${code}`), old => old === null ? {
-        hostId: uid, phase: 'waiting', createdAt: Date.now(),
-        players: { [uid]: makePlayer() },
-        game: { startedAt: 0, enemies: {}, bullets: {}, updatedAt: Date.now() }
-      } : undefined);
-      if (result.committed) { roomCode = code; created = true; break; }
-    }
-    if (!created) throw new Error('部屋コードを作成できませんでした。');
-    await onDisconnect(ref(db, roomPath(`players/${uid}`))).remove();
-    enterRoom();
-  } catch(e) { console.error(e); message(errorText(e), true); }
-  finally { $('createBtn').disabled = false; }
-}
-
-function makePlayer() {
-  return { id: uid, name: safeName(), x: 100 + Math.random()*(W-200), y: 100 + Math.random()*(H-200), hp: 100, kills: 0, alive: true, connected: true, updatedAt: Date.now() };
-}
-
-async function joinRoom() {
-  if (!db || !uid) return message('先にFirebaseの設定を確認してください。', true);
-  const code = $('roomCode').value.trim().toUpperCase();
-  if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return message('部屋コードは6文字で入力してください。', true);
-  $('joinBtn').disabled = true;
-  try {
-    const rr = ref(db, `rooms/${code}`), snap = await get(rr);
-    if (!snap.exists()) throw new Error('部屋が見つかりません。');
-    const data = snap.val(), players = data.players || {};
-    if (data.phase !== 'waiting') throw new Error('この部屋では現在参加できません。');
-    if (Object.keys(players).length >= 6) throw new Error('部屋が満員です（最大6人）。');
-    await set(ref(db, `rooms/${code}/players/${uid}`), makePlayer());
-    roomCode = code;
-    await onDisconnect(ref(db, roomPath(`players/${uid}`))).remove();
-    enterRoom();
-  } catch(e) { console.error(e); message(errorText(e), true); }
-  finally { $('joinBtn').disabled = false; }
-}
-
-function errorText(e) {
-  const m = String(e?.message || e);
-  if (m.includes('PERMISSION_DENIED') || m.includes('permission')) return 'FirebaseのRealtime Databaseルールで拒否されました。READMEの設定を確認してください。';
-  if (m.includes('network') || m.includes('offline')) return '通信に失敗しました。インターネット接続を確認してください。';
-  return m;
-}
-
-function enterRoom() {
-  isHost = false; phase = 'waiting';
-  hide('lobby'); show('roomPanel'); hide('gamePanel');
-  $('roomCodeLabel').textContent = roomCode;
-  if (unsubRoom) unsubRoom();
-  unsubRoom = onValue(ref(db, roomPath()), snap => {
-    if (!snap.exists()) { roomMessage('部屋が削除されました。'); return; }
-    roomData = snap.val(); isHost = roomData.hostId === uid; phase = roomData.phase || 'waiting';
-    renderRoom();
-    if (phase === 'playing' || phase === 'over') {
-      hide('roomPanel'); show('gamePanel');
-      if (phase === 'playing') { $('backLobbyBtn').classList.add('hidden'); $('gameTitle').textContent='生き残れ'; }
-      else { $('backLobbyBtn').classList.remove('hidden'); $('gameTitle').textContent='GAME OVER'; }
-    } else { show('roomPanel'); hide('gamePanel'); }
-    if (roomData.game?.enemies) enemies = Object.values(roomData.game.enemies);
-  }, e => { console.error(e); roomMessage(errorText(e)); });
-  roomMessage('参加者を同期しています…');
-}
-
-function renderRoom() {
-  const players = Object.values(roomData?.players || {});
-  $('playersList').innerHTML = '';
-  for (const p of players) {
-    const card = document.createElement('div'); card.className='player-card';
-    const avatar=document.createElement('div'); avatar.className='player-avatar'; avatar.textContent=(p.name||'?').slice(0,1).toUpperCase();
-    const info=document.createElement('div'); const name=document.createElement('strong'); name.textContent=p.name||'Player';
-    const sub=document.createElement('small'); sub.textContent=p.id===roomData.hostId?'HOST':(p.id===uid?'YOU':'PLAYER');
-    info.append(name,sub); card.append(avatar,info); $('playersList').append(card);
-  }
-  $('startBtn').disabled = !isHost || players.length < 2 || players.length > 6 || roomData.phase !== 'waiting';
-  if (!isHost) roomMessage('ホストがゲームを開始するのを待っています。');
-  else roomMessage(players.length < 2 ? 'もう1人以上参加すると開始できます。' : `${players.length}/6人 — 開始できます。`);
-}
-
-async function startGame() {
-  if (!isHost || !roomCode) return;
-  try {
-    const result = await runTransaction(ref(db, roomPath()), data => {
-      if (!data || data.hostId !== uid || data.phase !== 'waiting') return;
-      const count = Object.keys(data.players || {}).length;
-      if (count < 2 || count > 6) return;
-      data.phase='playing'; data.game={ startedAt:Date.now(), enemies:{}, bullets:{}, updatedAt:Date.now() };
-      for (const p of Object.values(data.players)) { p.hp=100; p.kills=0; p.alive=true; p.x=100+Math.random()*(W-200); p.y=100+Math.random()*(H-200); }
-      return data;
-    });
-    if (!result.committed) roomMessage('開始できません。2〜6人でホストが操作してください。');
-  } catch(e) { roomMessage(errorText(e)); }
-}
-
-async function leaveRoom() {
-  if (unsubRoom) { unsubRoom(); unsubRoom=null; }
-  if (db && roomCode && uid) {
-    try {
-      const snap=await get(ref(db,roomPath()));
-      if (snap.exists()) {
-        const data=snap.val();
-        await remove(ref(db,roomPath(`players/${uid}`)));
-        const remaining=Object.keys(data.players||{}).filter(id=>id!==uid);
-        if (data.hostId===uid) {
-          if (remaining.length) await update(ref(db,roomPath()),{hostId:remaining[0]});
-          else await remove(ref(db,roomPath()));
-        }
-      }
-    } catch(e) { console.warn(e); }
-  }
-  roomCode=null; roomData=null; phase='lobby'; isHost=false;
-  hide('roomPanel'); hide('gamePanel'); show('lobby');
-  message('部屋から退出しました。');
-}
-
-function updateLocalMove(dt) {
-  if (!me.alive || phase!=='playing') return;
-  let dx=0,dy=0;
-  if(keys.has('w')||keys.has('arrowup')||moveTouch.has('up'))dy--;
-  if(keys.has('s')||keys.has('arrowdown')||moveTouch.has('down'))dy++;
-  if(keys.has('a')||keys.has('arrowleft')||moveTouch.has('left'))dx--;
-  if(keys.has('d')||keys.has('arrowright')||moveTouch.has('right'))dx++;
-  if(dx||dy){const len=Math.hypot(dx,dy)||1;me.x=Math.max(18,Math.min(W-18,me.x+dx/len*220*dt));me.y=Math.max(18,Math.min(H-18,me.y+dy/len*220*dt));}
-}
-
-function drawGrid() {
-  ctx.fillStyle='#070b14';ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle='rgba(80,246,229,.08)';ctx.lineWidth=1;
-  for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  const g=ctx.createRadialGradient(W/2,H/2,40,W/2,H/2,450);g.addColorStop(0,'rgba(27,60,85,.14)');g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-}
-function drawPlayer(p, self=false) {
-  if (!p || p.alive===false) return;
-  ctx.save();ctx.shadowBlur=18;ctx.shadowColor=self?'#50f6e5':'#ff4d9d';ctx.fillStyle=self?'#50f6e5':'#ff4d9d';ctx.beginPath();ctx.arc(p.x,p.y,10,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-  ctx.strokeStyle='#f5ffff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,14,0,Math.PI*2);ctx.stroke();
-  ctx.font='12px sans-serif';ctx.textAlign='center';ctx.fillStyle='#eef4ff';ctx.fillText(p.name||'Player',p.x,p.y-22);
-  ctx.fillStyle='#263249';ctx.fillRect(p.x-17,p.y+17,34,4);ctx.fillStyle=p.hp>35?'#50f6e5':'#ff4d9d';ctx.fillRect(p.x-17,p.y+17,34*Math.max(0,p.hp||0)/100,4);ctx.restore();
-}
-function drawEnemy(e) { ctx.save();ctx.shadowBlur=15;ctx.shadowColor='#ff4d9d';ctx.fillStyle='#ff4d9d';ctx.beginPath();ctx.moveTo(e.x,e.y-11);ctx.lineTo(e.x+10,e.y);ctx.lineTo(e.x,e.y+11);ctx.lineTo(e.x-10,e.y);ctx.closePath();ctx.fill();ctx.restore(); }
-function renderGame() {
-  drawGrid();
-  for(const e of enemies)drawEnemy(e);
-  const players=Object.values(roomData?.players||{});
-  for(const p of players)drawPlayer(p,p.id===uid);
-  ctx.fillStyle='rgba(7,10,18,.8)';ctx.fillRect(12,12,190,38);ctx.fillStyle='#50f6e5';ctx.font='12px Orbitron, sans-serif';ctx.fillText(`ROOM ${roomCode||'------'}`,24,36);
-  const self=roomData?.players?.[uid];
-  $('aliveCount').textContent=players.filter(p=>p.alive!==false).length;
-  $('killCount').textContent=self?.kills??me.kills;$('hpCount').textContent=Math.max(0,self?.hp??me.hp);
-  if(self){me={...me,...self};}
-  if(phase==='over'){$('gameMessage').textContent=roomData?.winnerId===uid?'あなたの勝利！':'ゲーム終了。ロビーに戻れます。';}
-  else if(me.alive===false)$('gameMessage').textContent='脱落しました。ほかのプレイヤーの戦いを見守りましょう。';
-  else $('gameMessage').textContent='WASD / 矢印キーで移動。最も近い敵へ自動攻撃します。';
-}
-
-async function writeMyState() {
-  if(!db||!roomCode||!uid||phase!=='playing')return;
-  try { await update(ref(db,roomPath(`players/${uid}`)),{x:Math.round(me.x),y:Math.round(me.y),hp:me.hp,kills:me.kills,alive:me.alive,updatedAt:Date.now()}); } catch(e){console.warn('player sync',e);}
-}
-async function hostTick(now,dt) {
-  if(!isHost||!roomCode||phase!=='playing'||now-lastHostTick<130)return;
-  lastHostTick=now;
-  const players=Object.values(roomData?.players||{}).filter(p=>p.alive!==false);
-  if(players.length<=1 && Object.keys(roomData?.players||{}).length>1){
-    const winner=players[0]?.id||null;
-    try{await update(ref(db,roomPath()),{phase:'over',winnerId:winner,finishedAt:Date.now()});}catch(e){console.warn(e);}return;
-  }
-  if(enemies.length<Math.min(30,4+Math.floor((now-(roomData.game?.startedAt||now))/12000)) && Math.random()<.08){
-    const edge=Math.floor(Math.random()*4);let x,y;
-    if(edge===0){x=0;y=Math.random()*H;}else if(edge===1){x=W;y=Math.random()*H;}else if(edge===2){x=Math.random()*W;y=0;}else{x=Math.random()*W;y=H;}
-    enemies.push({id:`e${Date.now()}_${enemyCounter++}`,x,y,hp:1});
-  }
-  for(const e of enemies){
-    let target=null,best=Infinity;
-    for(const p of players){const d=Math.hypot(p.x-e.x,p.y-e.y);if(d<best){best=d;target=p;}}
-    if(target){const d=Math.max(1,best);e.x+=(target.x-e.x)/d*58*.13;e.y+=(target.y-e.y)/d*58*.13;}
-  }
-  // Host owns enemy simulation and publishes a compact snapshot.
-  const enemyObject={};for(const e of enemies.slice(0,35))enemyObject[e.id]={x:Math.round(e.x),y:Math.round(e.y),hp:1};
-  try{await update(ref(db,roomPath('game')),{enemies:enemyObject,updatedAt:Date.now()});}catch(e){console.warn('enemy sync',e);}
-}
-let lastFrame=performance.now();
-function frame(now) {
-  const dt=Math.min(.04,(now-lastFrame)/1000);lastFrame=now;
-  if(phase==='playing'){
-    updateLocalMove(dt);
-    const nowMs=Date.now();
-    if(nowMs-lastWrite>150){lastWrite=nowMs;writeMyState();}
-    hostTick(now,dt);
-    // Each client performs local auto-fire and collision. Host's shared enemy state remains authoritative for movement.
-    if(me.alive){
-      let target=null,best=190;
-      for(const e of enemies){const d=Math.hypot(e.x-me.x,e.y-me.y);if(d<best){best=d;target=e;}}
-      if(target && nowMs-(me.lastShot||0)>550){me.lastShot=nowMs;bullets.push({x:me.x,y:me.y,tx:target.x,ty:target.y,life:1});me.kills+=0;}
-      for(const b of bullets){b.x+=(b.tx-b.x)*.18;b.y+=(b.ty-b.y)*.18;b.life-=dt;}
-      bullets=bullets.filter(b=>b.life>0);
-      for(const e of enemies){if(Math.hypot(e.x-me.x,e.y-me.y)<18 && nowMs-(me.lastHit||0)>850){me.lastHit=nowMs;me.hp=Math.max(0,me.hp-12);if(me.hp===0)me.alive=false;}}
-    }
-  }
-  renderGame();requestAnimationFrame(frame);
-}
-
-$('createBtn').addEventListener('click',createRoom);
-$('joinBtn').addEventListener('click',joinRoom);
-$('startBtn').addEventListener('click',startGame);
-$('leaveBtn').addEventListener('click',leaveRoom);
-$('backLobbyBtn').addEventListener('click',leaveRoom);
-$('roomCode').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,'').slice(0,6);});
-window.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();keys.add(k);});
-window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
-window.addEventListener('blur',()=>keys.clear());
-document.querySelectorAll('[data-dir]').forEach(btn=>{
-  const dir=btn.dataset.dir;
-  const down=e=>{e.preventDefault();moveTouch.add(dir);};
-  const up=e=>{e.preventDefault();moveTouch.delete(dir);};
-  btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',up);
-});
-
-init();requestAnimationFrame(frame);
+const db = getDatabase(app);
+let uid = null, roomCode = null, roomData = null, roomUnsub = null;
+let currentGame = null, gameCleanup = null, soundOn = true, audioCtx = null;
+let localLastScore = 0;
+const MAX_PLAYERS = 6;
+const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const gameInfo = {
+  reaction: { title:'反射神経テスト', category:'CHALLENGE 01 / REFLEX', instruction:'赤から緑に変わった瞬間、すばやくタップ！' },
+  dodge: { title:'ネオン回避', category:'CHALLENGE 02 / SURVIVAL', instruction:'左右ボタンか矢印キーで障害物を避けよう。' },
+  clicker: { title:'10秒連打王', category:'CHALLENGE 03 / SPEED', instruction:'10秒間でできるだけたくさんタップ！' },
+  memory: { title:'記憶パネル', category:'CHALLENGE 04 / MEMORY', instruction:'光った順番を覚えて、同じ順番で押そう。' },
+  target: { title:'ターゲットハント', category:'CHALLENGE 05 / PRECISION', instruction:'15発以内にターゲットをクリック。命中率を上げよう。' }
+};
+function setMessage(msg, bad=false){ $('onlineMessage').textContent = msg; $('onlineMessage').style.color = bad ? '#ff8ba9' : ''; }
+function setConnection(text, online=false){ $('connection').innerHTML = `<i></i> ${text}`; $('connection').classList.toggle('online', online); }
+function beep(freq=600,duration=.06){ if(!soundOn) return; try { audioCtx ||= new (window.AudioContext||window.webkitAudioContext)(); const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.frequency.value=freq; o.type='sine'; g.gain.value=.045; o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+duration);o.stop(audioCtx.currentTime+duration); } catch {} }
+function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===id)); window.scrollTo({top:0,behavior:'smooth'}); }
+function makeCode(){ let s=''; for(let i=0;i<6;i++)s+=alphabet[Math.floor(Math.random()*alphabet.length)]; return s; }
+function safeName(){ return ($('playerName').value.trim()||'Player').slice(0,16); }
+function roomPath(){ return `rooms/${roomCode}`; }
+function playerPath(id=uid){ return `${roomPath()}/players/${id}`; }
+async function connect(){ if(uid) return uid; setConnection('Firebase接続中…'); const result=await signInAnonymously(auth); uid=result.user.uid; setConnection('Firebase接続済み',true); return uid; }
+function renderRoom(data){ roomData=data; if(!data){ setMessage('部屋が見つからないか、削除されました。',true); return; } $('roomCodeDisplay').textContent=roomCode; $('roomPanel').classList.remove('hidden'); const players=Object.values(data.players||{}).filter(p=>p&&p.id); $('playerCount').textContent=`${players.length}/${MAX_PLAYERS}`; $('playersList').innerHTML=players.map(p=>`<div class="player-row"><span class="player-avatar">${escapeHtml((p.name||'?').slice(0,1).toUpperCase())}</span><span>${escapeHtml(p.name||'Player')}</span>${p.id===data.hostId?'<span class="host-tag">HOST</span>':''}</div>`).join('')||'<p class="muted">参加者を待っています…</p>'; renderRanking(data); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderRanking(data=roomData){ const el=$('rankingList'); if(!data||!data.players){el.innerHTML='<p class="muted">オンラインルームに参加すると表示されます。</p>';return;} const arr=Object.values(data.players).filter(p=>p&&p.id).sort((a,b)=>(b.totalScore||0)-(a.totalScore||0)); el.innerHTML=arr.map((p,i)=>`<div class="rank-row"><span class="rank-num">${String(i+1).padStart(2,'0')}</span><span class="rank-name">${escapeHtml(p.name||'Player')}${p.id===uid?' (YOU)':''}</span><span class="rank-score">${p.totalScore||0}</span></div>`).join('')||'<p class="muted">まだ記録がありません。</p>'; }
+async function createRoom(){ try{ await connect(); setMessage('部屋を作成しています…'); let code, committed=false; for(let i=0;i<10;i++){code=makeCode();const result=await runTransaction(ref(db,`rooms/${code}`),old=>old===null?{hostId:uid,createdAt:Date.now(),players:{[uid]:{id:uid,name:safeName(),totalScore:0,connected:true,joinedAt:Date.now()}},scores:{}}:undefined); if(result.committed){committed=true;break;}} if(!committed) throw new Error('部屋を作成できませんでした。'); roomCode=code; await onDisconnect(ref(db,playerPath())).remove(); subscribeRoom(); setMessage('部屋を作成しました。コードを友達に共有してください。'); beep(720); }catch(e){ console.error(e);setMessage('作成失敗: '+friendlyError(e),true); } }
+async function joinRoom(){ try{ await connect(); const code=$('roomCode').value.trim().toUpperCase(); if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) throw new Error('6文字の部屋コードを入力してください。'); const snapshot=await get(ref(db,`rooms/${code}`)); if(!snapshot.exists()) throw new Error('その部屋は見つかりません。'); const data=snapshot.val(), players=data.players||{}; if(!players[uid]&&Object.keys(players).length>=MAX_PLAYERS) throw new Error('部屋が満員です。'); roomCode=code; await set(ref(db,playerPath()),{id:uid,name:safeName(),totalScore:players[uid]?.totalScore||0,connected:true,joinedAt:Date.now()}); await onDisconnect(ref(db,playerPath())).remove(); subscribeRoom(); setMessage('部屋に参加しました！'); beep(720); }catch(e){console.error(e);setMessage('参加失敗: '+friendlyError(e),true);} }
+function friendlyError(e){ const m=String(e?.message||e); if(m.includes('PERMISSION_DENIED')) return '権限がありません。Realtime Databaseのルールを確認してください。'; if(m.toLowerCase().includes('network')) return 'ネットワーク接続を確認してください。'; if(m.toLowerCase().includes('auth')) return 'Firebase Authenticationの匿名ログインを有効にしてください。'; return m; }
+function subscribeRoom(){ if(roomUnsub)roomUnsub(); $('roomCode').value=roomCode; roomUnsub=onValue(ref(db,roomPath()),snap=>{if(!snap.exists()){roomData=null;return;}renderRoom(snap.val());}); $('roomPanel').classList.remove('hidden'); }
+async function leaveRoom(){ try{ if(roomUnsub){roomUnsub();roomUnsub=null;} if(roomCode&&uid) await remove(ref(db,playerPath())); }catch(e){console.warn(e);} roomCode=null;roomData=null;$('roomPanel').classList.add('hidden');renderRanking(null);setMessage('オンラインルームから退出しました。'); }
+async function submitScore(score, label){ localLastScore=score; $('localScore').textContent=String(score); $('scoreLabel').textContent=label||'今回のスコア'; if(roomCode&&uid){try{ const snap=await get(ref(db,playerPath())); if(snap.exists()){const p=snap.val(); await update(ref(db,playerPath()),{totalScore:(p.totalScore||0)+Math.max(0,Math.round(score)),lastGame:currentGame,lastScore:Math.round(score),lastPlayedAt:Date.now()});}}catch(e){console.warn('score sync failed',e);}} beep(820,.1); }
+function cleanupGame(){ if(gameCleanup){gameCleanup();gameCleanup=null;} }
+function startGame(id){ cleanupGame();currentGame=id; const info=gameInfo[id];$('activeGameTitle').textContent=info.title;$('gameCategory').textContent=info.category;$('gameInstructions').textContent=info.instruction;$('localScore').textContent='—';$('scoreLabel').textContent='今回のスコア';showScreen('gameScreen'); const stage=$('gameStage'); stage.innerHTML=''; if(id==='reaction') playReaction(stage); if(id==='clicker') playClicker(stage); if(id==='memory') playMemory(stage); if(id==='target') playTarget(stage); if(id==='dodge') playDodge(stage); }
+function resultView(stage, title, score, detail, label='今回のスコア'){ stage.innerHTML=`<div class="game-center"><span class="eyebrow">CHALLENGE COMPLETE</span><h2>${escapeHtml(title)}</h2><div class="result-number">${escapeHtml(String(score))}</div><p>${escapeHtml(detail)}</p><div class="result-actions"><button class="primary" id="resultAgain">もう一度遊ぶ</button><button class="secondary" id="resultHome">ゲーム一覧へ</button></div></div>`; submitScore(score,label); $('resultAgain').onclick=()=>startGame(currentGame);$('resultHome').onclick=()=>showScreen('home'); }
+function playReaction(stage){ stage.innerHTML=`<div class="game-center"><span class="eyebrow">REACTION SPEED</span><h2>合図を待て。</h2><p>スタートを押して、画面が緑になった瞬間に押そう。早押しは失敗！</p><div id="reactionBox" class="wait-box">準備OK？</div><div style="margin-top:16px"><button class="primary" id="reactionStart">スタート</button></div></div>`;let state='idle',timer=null,start=0;const box=$('reactionBox'),btn=$('reactionStart');btn.onclick=()=>{if(state==='waiting')return;state='waiting';box.className='wait-box';box.textContent='赤になったら待つ…';btn.disabled=true;btn.textContent='待機中';timer=setTimeout(()=>{state='go';start=performance.now();box.className='wait-box go';box.textContent='押せ！！';},1000+Math.random()*3000);};box.onclick=()=>{if(state==='waiting'){clearTimeout(timer);state='idle';box.className='wait-box';box.textContent='早すぎ！もう一度。';btn.disabled=false;btn.textContent='もう一度';beep(180);return;}if(state==='go'){const ms=Math.round(performance.now()-start);state='done';resultView(stage,'反射神経テスト',Math.max(0,1000-ms),`反応時間 ${ms} ms。スコアは反応が速いほど高くなります。`,'反応スコア');}};gameCleanup=()=>clearTimeout(timer); }
+function playClicker(stage){stage.innerHTML=`<div class="game-center"><span class="eyebrow">10 SECOND TAP RUSH</span><div class="timer" id="tapTimer">10.0</div><h2>連打の限界へ。</h2><p>開始ボタンを押したら、10秒間タップしまくれ！</p><button class="tap-button" id="tapButton">TAP!</button><div style="margin-top:12px;font-size:12px;color:var(--muted)">TAPS <strong id="tapCount" style="color:var(--cyan);font-size:20px">0</strong></div><div style="margin-top:12px"><button class="secondary" id="tapStart">スタート</button></div></div>`;let active=false,count=0,end=0,raf=0;const tap=$('tapButton'),start=$('tapStart'),timer=$('tapTimer');tap.disabled=true;const tick=()=>{if(!active)return;const left=Math.max(0,end-performance.now());timer.textContent=(left/1000).toFixed(1);if(left<=0){active=false;tap.disabled=true;resultView(stage,'10秒連打王',count,`${count}回タップ！ 1秒あたり ${(count/10).toFixed(1)}回。`,'タップ数');return;}raf=requestAnimationFrame(tick);};start.onclick=()=>{count=0;active=true;end=performance.now()+10000;tap.disabled=false;start.disabled=true;start.textContent='挑戦中';$('tapCount').textContent='0';tick();};tap.onclick=()=>{if(!active)return;count++;$('tapCount').textContent=count;beep(450+Math.min(count,20)*10,.025);};gameCleanup=()=>{active=false;cancelAnimationFrame(raf);}; }
+function playMemory(stage){stage.innerHTML=`<div class="game-center"><span class="eyebrow">MEMORY SEQUENCE</span><h2>光る順番を覚えろ。</h2><p id="memoryMessage">スタートを押すと順番が光ります。</p><div class="memory-grid" id="memoryGrid">${['#ff5fba','#51f6f0','#a48aff','#ffb866'].map((c,i)=>`<button class="memory-pad" data-pad="${i}" style="--pad-color:${c}">${['●','◆','▲','✦'][i]}</button>`).join('')}</div><button class="primary" id="memoryStart">スタート</button><div style="margin-top:10px;font-size:11px;color:var(--muted)">ROUND <strong id="memoryRound">0</strong></div></div>`;let seq=[],input=[],round=0,locked=true,alive=true;const msg=$('memoryMessage'),pads=[...document.querySelectorAll('.memory-pad')],colors=['#ff5fba','#51f6f0','#a48aff','#ffb866'];function flash(i){pads[i].classList.add('lit');beep([440,520,620,740][i],.12);setTimeout(()=>pads[i].classList.remove('lit'),260);}function showSeq(){locked=true;msg.textContent='光る順番を見て…';let i=0;const interval=setInterval(()=>{if(!alive){clearInterval(interval);return;}if(i>=seq.length){clearInterval(interval);locked=false;input=[];msg.textContent='同じ順番で押してください！';return;}flash(seq[i++]);},570);timers.push(interval);}const timers=[];function nextRound(){round++;$('memoryRound').textContent=round;seq.push(Math.floor(Math.random()*4));showSeq();} $('memoryStart').onclick=()=>{$('memoryStart').disabled=true;nextRound();};pads.forEach((pad)=>pad.onclick=()=>{if(locked||!alive)return;const v=Number(pad.dataset.pad);flash(v);if(v!==seq[input.length]){alive=false;resultView(stage,'記憶パネル',Math.max(0,(round-1)*100),`到達ラウンド ${round}。正解したラウンド数でスコアが決まります。`,'記憶スコア');return;}input.push(v);if(input.length===seq.length){locked=true;msg.textContent='正解！次のラウンド…';setTimeout(()=>{if(alive)nextRound();},650);}});gameCleanup=()=>{alive=false;timers.forEach(clearInterval);}; }
+function playTarget(stage){stage.innerHTML=`<div class="game-center" style="width:100%;max-width:520px"><span class="eyebrow">TARGET HUNT</span><div class="target-meta"><span>SHOT <b id="shots">0</b>/15</span><span>HIT <b id="hits">0</b></span><span>TIME <b id="targetTime">20</b>s</span></div><div class="target-area" id="targetArea"><button class="target" id="targetDot" aria-label="ターゲット"></button></div><p id="targetMsg" style="margin:12px 0">スタート後、ターゲットを15回狙おう。</p><button class="primary" id="targetStart">スタート</button></div>`;const area=$('targetArea'),dot=$('targetDot');let active=false,shots=0,hits=0,end=0,raf=0,px=.5,py=.5;dot.style.display='none';function move(){px=.08+Math.random()*.84;py=.1+Math.random()*.8;dot.style.left=(px*100)+'%';dot.style.top=(py*100)+'%';}const tick=()=>{if(!active)return;const left=Math.max(0,(end-performance.now())/1000);$('targetTime').textContent=left.toFixed(1);if(left<=0||shots>=15){active=false;const accuracy=shots?Math.round(hits/shots*100):0;resultView(stage,'ターゲットハント',hits*100+accuracy,`${hits}/${shots}命中、命中率 ${accuracy}%。スコア = 命中数×100 + 命中率。`,'命中スコア');return;}raf=requestAnimationFrame(tick);};$('targetStart').onclick=()=>{active=true;shots=0;hits=0;end=performance.now()+20000;dot.style.display='block';$('targetStart').disabled=true;$('targetMsg').textContent='ターゲットをクリック！';move();tick();};dot.onclick=e=>{e.stopPropagation();if(!active)return;shots++;hits++;$('shots').textContent=shots;$('hits').textContent=hits;beep(800,.05);if(shots<15)move();};area.onclick=()=>{if(!active)return;shots++;$('shots').textContent=shots;beep(200,.05);};gameCleanup=()=>{active=false;cancelAnimationFrame(raf);}; }
+function playDodge(stage){stage.innerHTML=`<div class="game-center" style="width:100%;max-width:520px"><span class="eyebrow">NEON DODGE SURVIVAL</span><h2>当たるな、避けろ。</h2><p>左右に移動して、ピンクの障害物を避け続けよう。</p><div class="target-meta"><span>TIME <b id="dodgeTime">0.0</b>s</span><span>BEST <b id="dodgeBest">—</b></span></div><div class="dodge-area" id="dodgeArea"><div class="dodge-player" id="dodgePlayer"></div></div><div class="dodge-controls"><button class="secondary" id="dodgeLeft">←</button><button class="primary" id="dodgeStart">スタート</button><button class="secondary" id="dodgeRight">→</button></div><p id="dodgeMsg" style="margin-top:10px">ボタン、A/Dキー、または左右矢印で移動。</p></div>`;const area=$('dodgeArea'),player=$('dodgePlayer');let active=false,x=.5,y=.83,obstacles=[],last=0,elapsed=0,raf=0,moveDir=0,spawn=0;function drawPlayer(){player.style.left=`calc(${x*100}% - 11px)`;player.style.top=`calc(${y*100}% - 11px)`;}drawPlayer();function move(d){moveDir=d;if(active)x=Math.max(.04,Math.min(.96,x+d*.055));drawPlayer();}const keydown=e=>{if(['ArrowLeft','a','A'].includes(e.key)){e.preventDefault();move(-1);}if(['ArrowRight','d','D'].includes(e.key)){e.preventDefault();move(1);}};const keyup=e=>{if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key))moveDir=0;};window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);$('dodgeLeft').onpointerdown=()=>move(-1);$('dodgeRight').onpointerdown=()=>move(1);$('dodgeLeft').onpointerup=$('dodgeRight').onpointerup=()=>moveDir=0;$('dodgeLeft').onpointerleave=$('dodgeRight').onpointerleave=()=>moveDir=0;function spawnObstacle(){const el=document.createElement('div');el.className='dodge-obstacle';const ox=.03+Math.random()*.94;area.appendChild(el);obstacles.push({el,x:ox,y:-.08,speed:.24+Math.random()*.18});}function tick(now){if(!active)return;const dt=Math.min(.04,(now-last)/1000||0);last=now;elapsed+=dt;if(moveDir)x=Math.max(.04,Math.min(.96,x+moveDir*dt*1.5));drawPlayer();if(now-spawn>Math.max(240,650-elapsed*15)){spawnObstacle();spawn=now;}for(let i=obstacles.length-1;i>=0;i--){const o=obstacles[i];o.y+=o.speed*dt;o.el.style.left=`calc(${o.x*100}% - 8px)`;o.el.style.top=`${o.y*100}%`;if(Math.abs(o.x-x)<.055&&Math.abs(o.y-y)<.07){active=false;const score=Math.floor(elapsed*10);resultView(stage,'ネオン回避',score,`${elapsed.toFixed(1)}秒生存！障害物に当たるまでの時間がスコアになります。`,'生存スコア');return;}if(o.y>1.1){o.el.remove();obstacles.splice(i,1);}}$('dodgeTime').textContent=elapsed.toFixed(1);raf=requestAnimationFrame(tick);} $('dodgeStart').onclick=()=>{obstacles.forEach(o=>o.el.remove());obstacles=[];x=.5;elapsed=0;last=performance.now();spawn=0;active=true;drawPlayer();$('dodgeStart').disabled=true;$('dodgeMsg').textContent='開始！障害物を避けろ！';tick(last);};gameCleanup=()=>{active=false;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);obstacles.forEach(o=>o.el.remove());}; }
+// Navigation and room controls
+document.querySelectorAll('[data-game]').forEach(b=>b.addEventListener('click',()=>startGame(b.dataset.game)));
+document.querySelectorAll('[data-home]').forEach(b=>b.addEventListener('click',()=>{cleanupGame();showScreen('home');}));$('brandHome').onclick=e=>{e.preventDefault();cleanupGame();showScreen('home');};$('quickPlay').onclick=()=>startGame('dodge');$('openOnline').onclick=$('openOnline2').onclick=()=>showScreen('online');$('goGames').onclick=()=>showScreen('home');$('createRoom').onclick=createRoom;$('joinRoom').onclick=joinRoom;$('leaveRoom').onclick=leaveRoom;$('backToGames').onclick=()=>{cleanupGame();showScreen('home');};$('restartGame').onclick=()=>currentGame&&startGame(currentGame);$('copyCode').onclick=async()=>{try{await navigator.clipboard.writeText(roomCode);setMessage('部屋コードをコピーしました！');}catch{setMessage('部屋コード: '+roomCode);}};$('soundToggle').onclick=()=>{soundOn=!soundOn;$('soundLabel').textContent=soundOn?'ON':'OFF';beep(600);};$('roomCode').addEventListener('input',()=>{$('roomCode').value=$('roomCode').value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,'').slice(0,6);});
+connect().catch(e=>{console.error(e);setConnection('未接続');setMessage('Firebaseに接続できません。匿名認証・Realtime Database・ルールを確認してください。',true);});

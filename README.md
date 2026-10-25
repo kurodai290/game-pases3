@@ -1,37 +1,28 @@
-# NEON SURVIVOR ONLINE — Firebase版
+# NEON ARCADE — ミニゲームコレクション
 
-HTML/CSS/JavaScriptだけで動く、最大6人向けのオンラインサバイバルゲーム試作です。ファイルはフォルダーに入れず、すべてルートに置いてあります。
+フォルダーを増やさず、ファイルをすべて同じ階層に置く構成です。GitHub Pagesで公開できます。
 
-## 最初に必要なFirebase設定
+## ゲーム
+- 反射神経テスト：ランダムな合図に反応
+- ネオン回避：左右に動いて障害物を避ける
+- 10秒連打王：10秒間のタップ数を競う
+- 記憶パネル：光った順番を覚える
+- ターゲットハント：ターゲットを15回狙う
 
-このプロジェクトのFirebase設定は、提供された `game-pases2` の値を `firebase-config.js` に入力済みです。ただし、提供された設定にはRealtime Databaseの `databaseURL` がありません。URLは地域や作成方法によって異なるため、推測して埋めていません。
+## GitHub Pagesへの設置
+1. ZIPを展開します。
+2. `index.html`、`style.css`、`game.js`、`firebase-config.js`、`database.rules.json`、`README.md` をGitHubリポジトリのルートへアップロードします。
+3. Settings → Pages で `main` ブランチと `/(root)` を選択します。
 
-1. https://console.firebase.google.com/ を開き、`game-pases2` を選択。
-2. **構築（Build）→ Realtime Database** を開き、データベースを作成。
-3. データベース画面に表示されるURL（`https://...firebasedatabase.app` または `https://...firebaseio.com`）をコピー。
-4. `firebase-config.js` の `databaseURL: "PASTE_YOUR_REALTIME_DATABASE_URL_HERE"` を、そのURLに置き換えて保存。
-5. Firebase Consoleの **Authentication → Sign-in method** で **匿名（Anonymous）** を有効化。
-6. Realtime Databaseの「ルール」画面に `database.rules.json` の内容を設定して公開。
+## Firebase
+`firebase-config.js` は指定された `game-pases2` の設定を使用しています。
+Firebase Consoleで以下を有効にしてください。
+- Authentication → Sign-in method → Anonymous
+- Realtime Databaseを作成し、`databaseURL` が `https://game-pases2-default-rtdb.firebaseio.com/` と一致することを確認
+- `database.rules.json` のルールをRealtime DatabaseのRulesタブに設定してPublish
 
-**重要：** 同梱のルールは動作確認用です。ログイン済みの全ユーザーが部屋データを書き換えられるため、本番公開用としては安全ではありません。公開範囲を限定する場合は、参加者・ホスト・ゲーム状態ごとにルールを強化してください。FirebaseのAPIキーは通常フロントエンドに含めますが、データベースルールの代わりにはなりません。
+## オンラインルーム
+オンラインルームは6人まで。部屋コードを共有すると同じルームに参加でき、各自のミニゲームのスコアがランキングに反映されます。ゲームそのものは各端末で進行し、スコアのみ共有します。
 
-## GitHub Pagesで公開
-
-1. ZIPを展開。
-2. `index.html`、`style.css`、`game.js`、`firebase-config.js`、`database.rules.json`、`README.md` を同じ階層のままGitHubリポジトリのルートへアップロード。
-3. GitHubリポジトリの **Settings → Pages** で `Deploy from a branch`、ブランチ `main`、フォルダー `/(root)` を選び保存。
-4. 公開されたHTTPSのURLを開く。ローカルで `file://` から直接開かず、GitHub PagesなどのHTTPS上でテストしてください。
-
-## 操作
-
-- 部屋を作成すると6文字のコードが発行されます。
-- 友達は同じコードを入力して参加します。
-- ホストは2〜6人がそろうとゲームを開始できます。
-- PC：WASDまたは矢印キーで移動。
-- スマートフォン：画面下部の方向ボタンで移動。
-
-## 現状の注意
-
-- これはブラウザだけで動かすための初期版です。ゲーム同期はFirebase Realtime Databaseを使います。
-- 敵の状態やプレイヤー状態の同期は簡易方式であり、厳密な競技ゲーム向けの不正対策・サーバー権威型判定は未実装です。
-- 本番公開前に複数端末でテストし、Realtime Databaseのセキュリティルールを見直してください。
+## 注意
+これは遊び用の試作です。公開環境でのスコアやルームデータは不正操作を完全には防げません。公開ランキングなど本格運用をする場合は、Firebase Security Rulesをより厳密にし、スコア計算を信頼できるサーバー側に移してください。

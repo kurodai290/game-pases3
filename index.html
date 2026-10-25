@@ -1,34 +1,29 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NEON SURVIVOR ONLINE</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#090b18"><title>NEON ARCADE — ミニゲームセンター</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar"><div class="logo-mark">N</div><div><p class="eyebrow">MULTIPLAYER SURVIVAL</p><h1>NEON SURVIVOR <span>ONLINE</span></h1></div><div class="status"><i id="connectionDot"></i><span id="connectionText">未接続</span></div></header>
-    <section id="lobby" class="panel lobby">
-      <div class="intro"><p class="eyebrow">ENTER THE ARENA</p><h2>生き残るのは、最後の一人。</h2><p>最大6人で遊べるオンラインサバイバル。敵は自動で追跡し、攻撃も自動で行います。</p></div>
-      <label for="playerName">プレイヤー名</label><input id="playerName" maxlength="16" placeholder="名前を入力" value="Player">
-      <div class="lobby-actions"><button id="createBtn" class="primary">部屋を作成</button><div class="join-row"><input id="roomCode" maxlength="6" placeholder="部屋コード"><button id="joinBtn">参加する</button></div></div>
-      <p id="lobbyMessage" class="message" aria-live="polite">Firebaseに接続して準備します。</p>
-      <div class="howto"><div><b>01</b><span>ホストが部屋を作成</span></div><div><b>02</b><span>友達がコードで参加</span></div><div><b>03</b><span>全員そろったら開始</span></div></div>
+  <div class="ambient a1"></div><div class="ambient a2"></div>
+  <header class="topbar"><a class="brand" href="#home" id="brandHome"><span class="brand-icon">✦</span><span>NEON<span class="accent"> ARCADE</span><small>MINI GAME COLLECTION</small></span></a><div class="top-right"><span id="connection" class="status"><i></i> オフライン準備中</span><button class="icon-button" id="soundToggle" aria-label="サウンド切替">♫ <span id="soundLabel">ON</span></button></div></header>
+  <main>
+    <section id="home" class="screen active">
+      <div class="hero"><div class="eyebrow"><span class="pulse"></span> PLAY. COMPETE. REPEAT.</div><h1>退屈を、<span class="gradient-text">ぶっ壊せ。</span></h1><p>5つのミニゲームでスコアを競え。ひとりでも、友達とオンラインでも。</p><div class="hero-actions"><button class="primary" id="quickPlay">⚡ おすすめゲームで遊ぶ</button><button class="secondary" id="openOnline">◎ オンラインルーム</button></div><div class="stats"><div><strong>05</strong><span>MINI GAMES</span></div><div><strong>∞</strong><span>REPLAY VALUE</span></div><div><strong>6</strong><span>PLAYERS / ROOM</span></div></div></div>
+      <div class="section-heading"><div><span class="eyebrow">CHOOSE YOUR CHALLENGE</span><h2>ゲームセレクト<span class="tiny-dot">.</span></h2></div><span class="section-note">好きなゲームを選択</span></div>
+      <div class="game-grid">
+        <button class="game-card card-violet" data-game="reaction"><span class="game-number">01 / REFLEX</span><span class="game-art art-reaction"><span class="ring"></span><b>!</b></span><span class="game-title">反射神経テスト</span><span class="game-desc">合図が出た瞬間にタップ。反応速度を測れ。</span><span class="game-footer"><span>⏱ 反応速度</span><span class="play-arrow">↗</span></span></button>
+        <button class="game-card card-pink" data-game="dodge"><span class="game-number">02 / SURVIVAL</span><span class="game-art art-dodge"><span class="player-shape">◆</span><span class="hazard h1"></span><span class="hazard h2"></span><span class="hazard h3"></span></span><span class="game-title">ネオン回避</span><span class="game-desc">迫る障害物を避け続けろ。最後まで生き残れ。</span><span class="game-footer"><span>◆ 生存時間</span><span class="play-arrow">↗</span></span></button>
+        <button class="game-card card-cyan" data-game="clicker"><span class="game-number">03 / SPEED</span><span class="game-art art-click"><span>＋</span><small>TAP!</small></span><span class="game-title">10秒連打王</span><span class="game-desc">10秒間で何回押せる？連打力の限界に挑戦。</span><span class="game-footer"><span>✦ クリック数</span><span class="play-arrow">↗</span></span></button>
+        <button class="game-card card-orange" data-game="memory"><span class="game-number">04 / MEMORY</span><span class="game-art art-memory"><span>▦</span><i>●</i><i>◆</i><i>▲</i><i>✦</i></span><span class="game-title">記憶パネル</span><span class="game-desc">光った順番を覚えて入力。何ラウンド進める？</span><span class="game-footer"><span>▦ 記憶力</span><span class="play-arrow">↗</span></span></button>
+        <button class="game-card card-green" data-game="target"><span class="game-number">05 / PRECISION</span><span class="game-art art-target"><span class="target-ring r1"></span><span class="target-ring r2"></span><span class="target-ring r3"></span><span class="target-dot"></span></span><span class="game-title">ターゲットハント</span><span class="game-desc">動くターゲットを狙え。15発で命中精度を競う。</span><span class="game-footer"><span>◎ 命中率</span><span class="play-arrow">↗</span></span></button>
+      </div>
+      <section class="online-banner"><div class="banner-icon">⌁</div><div><span class="eyebrow">PLAY TOGETHER</span><h3>友達とスコアバトル。</h3><p>ルームコードを共有して、同じ部屋で記録を競おう。</p></div><button class="secondary" id="openOnline2">ルームへ →</button></section>
     </section>
-    <section id="roomPanel" class="panel room-panel hidden">
-      <div class="room-head"><div><p class="eyebrow">YOUR ROOM</p><h2>部屋コード <strong id="roomCodeLabel">------</strong></h2></div><button id="leaveBtn" class="subtle">退出</button></div>
-      <div id="playersList" class="players-list"></div>
-      <div class="room-controls"><p id="roomMessage" class="message">参加者を待っています。</p><button id="startBtn" class="primary" disabled>ゲーム開始</button></div>
-    </section>
-    <section id="gamePanel" class="panel game-panel hidden">
-      <div class="game-top"><div><p class="eyebrow">SURVIVAL ARENA</p><h2 id="gameTitle">生存せよ</h2></div><div class="game-stats"><span>生存 <b id="aliveCount">0</b></span><span>撃破 <b id="killCount">0</b></span><span>HP <b id="hpCount">100</b></span></div></div>
-      <canvas id="arena" width="960" height="540" aria-label="ゲーム画面"></canvas>
-      <div class="game-bottom"><p id="gameMessage">WASD / 矢印キーで移動。攻撃は自動です。</p><button id="backLobbyBtn" class="subtle hidden">ロビーに戻る</button></div>
-      <div class="mobile-controls"><button data-dir="up">▲</button><div><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div></div>
-    </section>
-    <footer><span>NEON SURVIVOR ONLINE</span><span>FIGHT • SURVIVE • REPEAT</span></footer>
+    <section id="online" class="screen"><button class="back-link" data-home>← ゲーム一覧へ</button><div class="panel-wrap"><div class="panel-intro"><span class="eyebrow">ONLINE LOBBY</span><h1>友達と<span class="gradient-text">遊ぼう。</span></h1><p>名前を入力して部屋を作るか、友達のコードで参加してください。</p></div><div class="online-panel"><label for="playerName">プレイヤー名</label><input id="playerName" maxlength="16" placeholder="プレイヤー名" value="Player"><div class="online-buttons"><button class="primary" id="createRoom">＋ 部屋を作る</button><div class="join-line"><input id="roomCode" maxlength="6" placeholder="6文字のコード" autocomplete="off"><button class="secondary" id="joinRoom">参加する</button></div></div><p class="hint" id="onlineMessage">最大6人。ゲームはそれぞれの端末で遊び、スコアを共有します。</p></div><div class="room-panel hidden" id="roomPanel"><div class="room-top"><div><span class="eyebrow">ROOM CODE</span><strong id="roomCodeDisplay">------</strong></div><button class="secondary small" id="copyCode">コードをコピー</button></div><div class="players-title">参加プレイヤー <span id="playerCount">0/6</span></div><div id="playersList" class="players-list"></div><div class="room-actions"><button class="primary" id="goGames">ゲームを選ぶ →</button><button class="danger small" id="leaveRoom">退出</button></div></div></div></section>
+    <section id="gameScreen" class="screen"><button class="back-link" data-home>← ゲーム一覧へ</button><div class="play-layout"><div class="play-main"><div class="play-heading"><div><span class="eyebrow" id="gameCategory">CHALLENGE 01</span><h1 id="activeGameTitle">反射神経テスト</h1></div><button class="secondary small" id="restartGame">↻ もう一度</button></div><div id="gameStage" class="game-stage"></div><div class="game-bottom"><p id="gameInstructions">準備ができたらスタート。</p><button class="secondary" id="backToGames">ゲーム一覧へ</button></div></div><aside class="score-panel"><span class="eyebrow">YOUR RECORD</span><div class="big-score" id="localScore">—</div><p id="scoreLabel">今回のスコア</p><div class="divider"></div><span class="eyebrow">ROOM RANKING</span><div id="rankingList" class="ranking-list"><p class="muted">オンラインルームに参加すると表示されます。</p></div></aside></div></section>
   </main>
+  <footer><span>NEON ARCADE</span><span>ONE MORE ROUND?</span></footer>
   <script type="module" src="game.js"></script>
-</body>
-</html>
+</body></html>
