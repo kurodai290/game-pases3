@@ -1,5 +1,4 @@
-// Firebase Console > プロジェクトの設定 > マイアプリ の値を使用しています。
-// Realtime Databaseを作成した後、databaseURLを必ず設定してください。
+// Firebase Console > Project settings > Your apps の設定値
 export const firebaseConfig = {
   apiKey: "AIzaSyCdrTIwV6f7dPfoAOnruOZ_4VU4OrfWpDw",
   authDomain: "game-pases2.firebaseapp.com",
